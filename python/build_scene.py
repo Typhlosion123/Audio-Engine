@@ -16,18 +16,18 @@ objects.append({
     'p2': (2, 0, 15)     # Max
 })
 
-# A floating sphere blocking the source
-objects.append({
-    'type': 0,
-    'p1': (-5, 0, -5),
-    'p2': (3.0, 0, 0) #radius will always be x, otherwise ignore it
-})
+# # A floating sphere blocking the source
+# objects.append({
+#     'type': 0,
+#     'p1': (-5, 0, -5),
+#     'p2': (3.0, 0, 0) #radius will always be x, otherwise ignore it
+# })
 
-objects.append({
-    'type': 0,
-    'p1': (5, 5, 5),
-    'p2': (2.0, 0, 0)
-})
+# objects.append({
+#     'type': 0,
+#     'p1': (5, 5, 5),
+#     'p2': (2.0, 0, 0)
+# })
 
 # Format matches 'SceneHeader' and 'Object' structs in C++
 # f = float (4 bytes), i = int (4 bytes)
