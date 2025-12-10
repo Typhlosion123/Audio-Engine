@@ -4,9 +4,10 @@
 #include "types.h"
 #include "intersections.cuh"
 
+#define TRANSMISSION_PENALTY 0.4f 
+
 curandState* d_states = nullptr;
 Object* d_objects = nullptr;
-int g_num_objects = 0;
 
 __global__ void initRandKernel(curandState* states, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -40,6 +41,7 @@ __global__ void genRaysKernel(Ray* rays, curandState* states, float3* paths, int
             float3 n_closest;
             bool hit_something = false;
 
+            // 1. Room Walls (Always Solid)
             float t_wall; float3 n_wall;
             if (intersectAABB(r, scene.room.min, scene.room.max, t_wall, n_wall, true)) {
                 if (t_wall < t_closest) {
@@ -49,13 +51,23 @@ __global__ void genRaysKernel(Ray* rays, curandState* states, float3* paths, int
                 }
             }
 
+            // 2. Objects
             for (int i = 0; i < scene.num_objects; i++) {
                 float t_obj; float3 n_obj;
                 if (intersectObject(r, objects[i], t_obj, n_obj)) {
-                    if (t_obj < t_closest) {
-                        t_closest = t_obj;
-                        n_closest = n_obj;
-                        hit_something = true;
+                    
+                    bool transmit = curand_uniform(&localState) < objects[i].transmission;
+                    
+                    if (transmit) {
+                        // Pass through (Ignore hit, pay energy penalty)
+                        energy *= TRANSMISSION_PENALTY;
+                    } else {
+                        // Solid Hit
+                        if (t_obj < t_closest) {
+                            t_closest = t_obj;
+                            n_closest = n_obj;
+                            hit_something = true;
+                        }
                     }
                 }
             }
@@ -80,7 +92,6 @@ __global__ void genRaysKernel(Ray* rays, curandState* states, float3* paths, int
         } 
         
         while (b <= MAX_BOUNCES) { paths[path_base_idx + b] = r.origin; b++; }
-
         states[idx] = localState;
         if (hits != nullptr) hits[idx] = has_hit_listener ? 1 : 0;
     }
@@ -97,19 +108,16 @@ extern "C" void initRandom(int n_rays) {
 extern "C" void generateRays(Ray* d_rays, float3* d_paths, int* d_hits, int n_rays, 
                              SceneHeader scene, Object* host_objects) {
     
-    Object* d_scene_objects;
+    Object* d_scene_objects = nullptr;
     if (scene.num_objects > 0) {
         cudaMalloc(&d_scene_objects, scene.num_objects * sizeof(Object));
         cudaMemcpy(d_scene_objects, host_objects, scene.num_objects * sizeof(Object), cudaMemcpyHostToDevice);
-    } else {
-        d_scene_objects = nullptr;
     }
 
     int blockSize = 256;
     int numBlocks = (n_rays + blockSize - 1) / blockSize;
-    
     genRaysKernel<<<numBlocks, blockSize>>>(d_rays, d_states, d_paths, d_hits, n_rays, scene, d_scene_objects);
     
     cudaDeviceSynchronize();
-    if (scene.num_objects > 0) cudaFree(d_scene_objects);
+    if (d_scene_objects) cudaFree(d_scene_objects);
 }

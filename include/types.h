@@ -25,6 +25,7 @@ struct Object {
     int type;
     float3 param1; //if it is a box, will be the min corner. Otherwise its the sphere orogin
     float3 param2; //if it is a bhox, max corner, otherwise its the spehre radius
+    float transmission; //how likely a ray can pass through this object
 };
 
 struct SceneHeader {

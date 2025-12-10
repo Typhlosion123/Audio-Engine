@@ -13,7 +13,9 @@ objects = []
 objects.append({
     'type': 1,
     'p1': (-2, -50, -10), # Min
-    'p2': (2, 40, 10)     # Max
+    'p2': (2, 40, 10), # Max
+    'trans': .1
+
 })
 
 
@@ -36,35 +38,28 @@ objects.append({
 with open("../build/scene.bin", "wb") as f:
     print(f"Building Scene with {len(objects)} objects...")
 
-    # 1. Write Header
-    # Room (6f), Source (3f), Listener (3f), Radius (1f), Count (1i)
-    # Total floats: 6 + 3 + 3 + 1 = 13 floats
+    # Write Header (Unchanged: 13 floats, 1 int)
     header_fmt = "13fi" 
-    
     header_data = [
         *ROOM_MIN, *ROOM_MAX,
-        *SOURCE,
-        *LISTENER,
-        LISTENER_RADIUS,
-        len(objects)
+        *SOURCE, *LISTENER,
+        LISTENER_RADIUS, len(objects)
     ]
-    
     f.write(struct.pack(header_fmt, *header_data))
 
-    # 2. Write Objects
-    # Type (1i), Param1 (3f), Param2 (3f)
-    obj_fmt = "i6f"
+    # Write Objects (UPDATED)
+    # Type (1i), Param1 (3f), Param2 (3f), Transmission (1f)
+    # Total = 1 int + 7 floats
+    obj_fmt = "i7f"
 
     for obj in objects:
         p1 = obj['p1']
         p2 = obj['p2']
-        # If sphere, p2 is just radius, pad y/z with 0
-        if obj['type'] == 0 and len(p2) == 1: 
-             p2 = (p2[0], 0.0, 0.0)
-        elif obj['type'] == 0 and isinstance(p2, (int, float)):
-             p2 = (p2, 0.0, 0.0)
+        # Handle scalar radius for spheres
+        if obj['type'] == 0 and len(p2) == 1: p2 = (p2[0], 0.0, 0.0)
+        elif obj['type'] == 0 and isinstance(p2, (int, float)): p2 = (p2, 0.0, 0.0)
 
-        data = [obj['type'], *p1, *p2]
+        data = [obj['type'], *p1, *p2, obj['trans']]
         f.write(struct.pack(obj_fmt, *data))
 
 print("Success! Wrote ../build/scene.bin")
