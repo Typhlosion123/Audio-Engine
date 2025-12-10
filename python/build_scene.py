@@ -14,7 +14,7 @@ objects.append({
     'type': 1,
     'p1': (-2, -50, -10), # Min
     'p2': (2, 40, 10), # Max
-    'trans': .1
+    'trans': 0.0
 
 })
 

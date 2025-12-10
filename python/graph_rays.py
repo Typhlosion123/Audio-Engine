@@ -100,7 +100,7 @@ hit_count = 0
 counter = 0
 
 for rid in ray_ids:
-    if (counter >= 2000):
+    if (counter >= 1000):
         break
     ray_data = df[df['ray_id'] == rid]
     did_hit = ray_data['hit_listener'].iloc[0] == 1
