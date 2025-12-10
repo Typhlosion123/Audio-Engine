@@ -4,14 +4,33 @@
 #include <cuda_runtime.h>
 #include "types.h"
 
-const int N_RAYS = 250;
-const int MAX_BOUNCES = 50;
+const int N_RAYS = 2000; 
 
 extern "C" void initRandom(int n_rays);
-extern "C" void generateRays(Ray* d_rays, float3* d_paths, int* d_hits, int n_rays, float3 source, float3 listener);
+extern "C" void generateRays(Ray* d_rays, float3* d_paths, int* d_hits, int n_rays, SceneHeader scene, Object* objects);
 
 int main() {
-    std::cout << "=== Starting Audio Ray Tracer (Energy Mode) ===" << std::endl;
+    std::cout << "Loading binary scene" << std::endl;
+
+    FILE* fs = fopen("scene.bin", "rb");
+    if (!fs) {
+        std::cerr << "Could not open scene.bin" << std::endl;
+        return 1;
+    }
+
+    SceneHeader header;
+    if (fread(&header, sizeof(SceneHeader), 1, fs) != 1) {
+         std::cerr << "Error reading header" << std::endl; return 1;
+    }
+
+    std::cout << "Room: " << header.room.min.x << " to " << header.room.max.x << std::endl;
+    std::cout << "Objects: " << header.num_objects << std::endl;
+
+    std::vector<Object> objects(header.num_objects);
+    if (header.num_objects > 0) {
+        fread(objects.data(), sizeof(Object), header.num_objects, fs);
+    }
+    fclose(fs);
 
     Ray* d_rays;
     cudaMalloc(&d_rays, N_RAYS * sizeof(Ray));
@@ -21,17 +40,15 @@ int main() {
     cudaMalloc(&d_paths, path_size * sizeof(float3));
 
     int* d_hits;
-    cudaMalloc(&d_hits, N_RAYS * sizeof(int)); 
+    cudaMalloc(&d_hits, N_RAYS * sizeof(int));
 
-    float3 source_pos = make_float3(0.0f, -10.0f, 0.0f);   
-    float3 listener_pos = make_float3(0.0f, 10.0f, 2.5f); 
-
-    std::cout << "Initializing..." << std::endl;
+    std::cout << "Initializing RNG..." << std::endl;
     initRandom(N_RAYS);
 
-    std::cout << "Simulating (Source: " << source_pos.x << ", " << source_pos.z << ")..." << std::endl;
-    generateRays(d_rays, d_paths, d_hits, N_RAYS, source_pos, listener_pos);
+    std::cout << "Simulating..." << std::endl;
+    generateRays(d_rays, d_paths, d_hits, N_RAYS, header, objects.data());
 
+    std::cout << "Downloading..." << std::endl;
     std::vector<float3> host_paths(path_size);
     cudaMemcpy(host_paths.data(), d_paths, path_size * sizeof(float3), cudaMemcpyDeviceToHost);
 

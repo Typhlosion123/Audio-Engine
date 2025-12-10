@@ -2,166 +2,130 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 import os
-import time
+import struct
 
-# --- CONFIGURATION ---
-LISTENER_POS = (0.0, 10.0, 5.0) 
-LISTENER_RADIUS = 2.0
+# --- LOAD SCENE FROM BINARY ---
+SCENE_FILE = "../build/scene.bin"
 
-# Room Dimensions (Must match C++ logic!)
-ROOM_X = (-10, 10) # Left/Right
-ROOM_Y = (-20, 20) # Floor/Ceiling
-ROOM_Z = (-10, 10) # Back/Front
+show_rays = True
 
-# 1. Load Data
+if not os.path.exists(SCENE_FILE):
+    print("Error: Scene file not found. Run build_scene.py first.")
+    exit()
+
+with open(SCENE_FILE, "rb") as f:
+    # Read Header (13 floats, 1 int)
+    # Room(6), Source(3), Listener(3), Radius(1), Count(1)
+    h_data = struct.unpack("13fi", f.read(13*4 + 4))
+    
+    ROOM_MIN = h_data[0:3]
+    ROOM_MAX = h_data[3:6]
+    SOURCE_POS = h_data[6:9]
+    LISTENER_POS = h_data[9:12]
+    LISTENER_RADIUS = h_data[12]
+    NUM_OBJECTS = h_data[13]
+    
+    print(f"Loaded Scene: Room={ROOM_MIN}-{ROOM_MAX}, Objects={NUM_OBJECTS}")
+
+    objects = []
+    for _ in range(NUM_OBJECTS):
+        # Type(1i), P1(3f), P2(3f)
+        obj_data = struct.unpack("i6f", f.read(4 + 6*4))
+        objects.append({
+            'type': obj_data[0],
+            'p1': obj_data[1:4],
+            'p2': obj_data[4:7]
+        })
+
+# --- LOAD RAYS ---
 csv_path = "../build/paths.csv"
-
 if not os.path.exists(csv_path):
-    print(f"Error: Could not find {csv_path}")
-    print("Please run the C++ simulation first: cd build && ./AcousticSim")
+    print("Run C++ sim first.")
     exit()
 
-# Timestamp Check
-mod_time = os.path.getmtime(csv_path)
-print(f"Loading data from: {csv_path}")
-print(f"File generated on: {time.ctime(mod_time)}")
-
-try:
-    df = pd.read_csv(csv_path)
-except Exception as e:
-    print(f"Error reading CSV: {e}")
-    exit()
-
-# Detect Source
-try:
-    source_row = df[(df['ray_id'] == 0) & (df['bounce_id'] == 0)].iloc[0]
-    SOURCE_POS = (source_row['x'], source_row['y'], source_row['z'])
-except IndexError:
-    SOURCE_POS = (-5.0, 0.0, -5.0)
+df = pd.read_csv(csv_path)
 
 traces = []
 
-# --- Helper: Draw Room Wireframe (Updated for Rectangles) ---
-def get_room_wireframe(x_rng, y_rng, z_rng):
-    # Unpack tuples
-    x0, x1 = x_rng
-    y0, y1 = y_rng
-    z0, z1 = z_rng
+# --- DRAW ROOM ---
+def get_box_wireframe(min_c, max_c):
+    x0, y0, z0 = min_c
+    x1, y1, z1 = max_c
+    
+    x = [x0, x1, x1, x0, x0, None, x0, x1, x1, x0, x0, None, x0, x0, None, x1, x1, None, x1, x1, None, x0, x0]
+    y = [y0, y0, y0, y0, y0, None, y1, y1, y1, y1, y1, None, y0, y1, None, y0, y1, None, y0, y1, None, y0, y1]
+    z = [z0, z0, z1, z1, z0, None, z0, z0, z1, z1, z0, None, z0, z0, None, z0, z0, None, z1, z1, None, z1, z1]
+    return x, y, z
 
-    # 1. Floor Loop (Draws the square on the bottom)
-    # Sequence: (x0,y0,z0) -> (x1,y0,z0) -> (x1,y0,z1) -> (x0,y0,z1) -> (x0,y0,z0)
-    x_floor = [x0, x1, x1, x0, x0, None]
-    y_floor = [y0, y0, y0, y0, y0, None]
-    z_floor = [z0, z0, z1, z1, z0, None]
+# Draw Room Boundary (White Wireframe)
+rx, ry, rz = get_box_wireframe(ROOM_MIN, ROOM_MAX)
+traces.append(go.Scatter3d(x=rx, y=ry, z=rz, mode='lines', line=dict(color='white', width=4), name='Room'))
 
-    # 2. Ceiling Loop (Draws the square on top)
-    # Sequence: (x0,y1,z0) -> (x1,y1,z0) -> (x1,y1,z1) -> (x0,y1,z1) -> (x0,y1,z0)
-    x_ceil = [x0, x1, x1, x0, x0, None]
-    y_ceil = [y1, y1, y1, y1, y1, None]
-    z_ceil = [z0, z0, z1, z1, z0, None]
-
-    # 3. Pillars (Connects Floor corners to Ceiling corners)
-    # We draw 4 separate lines, separated by None
-    x_cols = [x0, x0, None, x1, x1, None, x1, x1, None, x0, x0]
-    y_cols = [y0, y1, None, y0, y1, None, y0, y1, None, y0, y1]
-    z_cols = [z0, z0, None, z0, z0, None, z1, z1, None, z1, z1]
-
-    return x_floor + x_ceil + x_cols, y_floor + y_ceil + y_cols, z_floor + z_ceil + z_cols
-
-# Generate the room coordinates using the config at the top
-rx, ry, rz = get_room_wireframe(ROOM_X, ROOM_Y, ROOM_Z)
-
-traces.append(go.Scatter3d(
-    x=rx, y=ry, z=rz, 
-    mode='lines', 
-    line=dict(color='white', width=4), 
-    name='Room Walls',
-    hoverinfo='none'
-))
-
-# --- Helper: Listener & Source ---
-def get_sphere_mesh(x_c, y_c, z_c, r, color):
+# --- DRAW OBJECTS ---
+def get_sphere_mesh(x, y, z, r, color, name, opacity=0.8):
     phi = np.linspace(0, 2*np.pi, 20)
     theta = np.linspace(0, np.pi, 20)
     phi, theta = np.meshgrid(phi, theta)
-    return go.Surface(x=r*np.sin(theta)*np.cos(phi)+x_c, y=r*np.sin(theta)*np.sin(phi)+y_c, z=r*np.cos(theta)+z_c, colorscale=[[0, color], [1, color]], showscale=False, opacity=0.3, name='Listener')
+    return go.Surface(
+        x=r*np.sin(theta)*np.cos(phi)+x, 
+        y=r*np.sin(theta)*np.sin(phi)+y, 
+        z=r*np.cos(theta)+z, 
+        colorscale=[[0, color], [1, color]], 
+        showscale=False, opacity=opacity, name=name
+    )
 
-traces.append(get_sphere_mesh(LISTENER_POS[0], LISTENER_POS[1], LISTENER_POS[2], LISTENER_RADIUS, 'yellow'))
+def get_box_mesh(min_c, max_c, color, name):
+    # Create a solid mesh for the box using convex hull (alphahull=0)
+    x0, y0, z0 = min_c
+    x1, y1, z1 = max_c
+    # 8 corners
+    x = [x0, x0, x1, x1, x0, x0, x1, x1]
+    y = [y0, y1, y1, y0, y0, y1, y1, y0]
+    z = [z0, z0, z0, z0, z1, z1, z1, z1]
+    
+    return go.Mesh3d(
+        x=x, y=y, z=z,
+        color=color,
+        alphahull=0, # Generates convex hull (perfect for cubes)
+        opacity=0.6,
+        name=name,
+        flatshading=True
+    )
+
+for i, obj in enumerate(objects):
+    if obj['type'] == 0: # Sphere
+        # Draw Solid Sphere (Orange)
+        traces.append(get_sphere_mesh(obj['p1'][0], obj['p1'][1], obj['p1'][2], obj['p2'][0], 'orange', f"Sphere {i}", opacity=0.9))
+        
+    elif obj['type'] == 1: # Box
+        # Draw Solid Box (Orange Mesh)
+        traces.append(get_box_mesh(obj['p1'], obj['p2'], 'orange', f"Box {i}"))
+        # Draw Box Edges (White Wireframe overlay for sharpness)
+        bx, by, bz = get_box_wireframe(obj['p1'], obj['p2'])
+        traces.append(go.Scatter3d(x=bx, y=by, z=bz, mode='lines', line=dict(color='white', width=3), name=f"Box Edge {i}", showlegend=False))
+
+# --- DRAW SOURCE/LISTENER ---
+traces.append(get_sphere_mesh(LISTENER_POS[0], LISTENER_POS[1], LISTENER_POS[2], LISTENER_RADIUS, 'yellow', 'Listener', opacity=0.3))
 traces.append(go.Scatter3d(x=[SOURCE_POS[0]], y=[SOURCE_POS[1]], z=[SOURCE_POS[2]], mode='markers', marker=dict(size=8, color='red'), name='Source'))
 
-# --- Plot Rays ---
-ray_ids = df['ray_id'].unique()
-hit_count = 0
-miss_x, miss_y, miss_z = [], [], []
-hit_signatures = set() 
+# --- DRAW RAYS ---
+if (show_rays):
+    ray_ids = df['ray_id'].unique()
+    hit_count = 0
 
-print(f"Processing {len(ray_ids)} rays...")
+    for rid in ray_ids:
+        ray_data = df[df['ray_id'] == rid]
+        did_hit = ray_data['hit_listener'].iloc[0] == 1
+        
+        if did_hit:
+            hit_count += 1
+            traces.append(go.Scatter3d(
+                x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
+                mode='lines', line=dict(color='#00FF00', width=2), opacity=0.1, showlegend=False
+            ))
 
-for rid in ray_ids:
-    ray_data = df[df['ray_id'] == rid]
-    did_hit = ray_data['hit_listener'].iloc[0] == 1
-    
-    rx = ray_data['x'].tolist()
-    ry = ray_data['y'].tolist()
-    rz = ray_data['z'].tolist()
+    print(f"Hits: {hit_count}")
 
-    if did_hit:
-        hit_count += 1
-        if len(rx) > 1:
-            sig = f"{rx[1]:.2f}_{ry[1]:.2f}_{rz[1]:.2f}"
-            hit_signatures.add(sig)
-
-        traces.append(go.Scatter3d(
-            x=rx, y=ry, z=rz,
-            mode='lines',
-            line=dict(color='#00FF00', width=2),
-            opacity=0.5,
-            name=f'Ray {rid}',
-            legendgroup="Audible Rays",
-            showlegend=False
-        ))
-    else:
-        miss_x.extend(rx + [None])
-        miss_y.extend(ry + [None])
-        miss_z.extend(rz + [None])
-
-traces.append(go.Scatter3d(
-    x=miss_x, y=miss_y, z=miss_z,
-    mode='lines',
-    line=dict(color='cyan', width=1),
-    opacity=0.1,
-    name='Inaudible Rays',
-    hoverinfo='none'
-))
-
-# Stats
-print("-" * 30)
-print(f"Total Hit Count: {hit_count}")
-print(f"Unique Hit Paths: {len(hit_signatures)}")
-print("-" * 30)
-
-if len(hit_signatures) < hit_count and hit_count > 0:
-    print("⚠️  WARNING: DUPLICATE RAYS DETECTED!")
-    print(f"You have {hit_count} hits, but only {len(hit_signatures)} unique paths.")
-
-traces.append(go.Scatter3d(x=[None], y=[None], z=[None], mode='lines', line=dict(color='#00FF00', width=2), name='Audible Rays (Hit Listener)'))
-traces.append(go.Scatter3d(x=[None], y=[None], z=[None], mode='lines', line=dict(color='cyan', width=1), name='Inaudible Rays (Missed)'))
-
-layout = go.Layout(
-    title=f"Audio Ray Tracer<br>Unique Hits: {len(hit_signatures)} / {hit_count}",
-    scene=dict(
-        aspectmode='data', 
-        xaxis=dict(range=[-12, 12], backgroundcolor="black", showgrid=True),
-        yaxis=dict(range=[-12, 12], backgroundcolor="black", showgrid=True),
-        zaxis=dict(range=[-12, 12], backgroundcolor="black", showgrid=True),
-        bgcolor="black"
-    ),
-    paper_bgcolor="black",
-    font=dict(color="white"),
-    margin=dict(r=0, l=0, b=0, t=60)
-)
-
+layout = go.Layout(scene=dict(aspectmode='data', bgcolor='black'))
 fig = go.Figure(data=traces, layout=layout)
-output_file = "output/audio_sim.html"
-fig.write_html(output_file)
-print(f"Done! Open {output_file}")
+fig.write_html("output/audio_sim.html")

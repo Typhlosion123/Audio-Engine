@@ -2,6 +2,12 @@
 
 #include <cuda_runtime.h>
 
+#define MAX_BOUNCES 50 
+#define MIN_ENERGY 0.001f
+
+#define OBJ_SPHERE 0
+#define OBJ_BOX 1
+
 struct Ray
 {
     /* data */
@@ -9,19 +15,24 @@ struct Ray
     float3 direction;
 };
 
-struct RayState {
-    float energy; // starts aat 1.0, decreases with each bounce
-    float time_delay; // total distance traveled / speed of sound
-    bool is_active; //false if it hits the sky or energy < threshold
-};
 
 struct AABB {
     float3 min; // Bottom-left-back corner
     float3 max; // Top-right-front corner
 };
 
-struct HitInfo {
-    float t;          // Distance to hit
-    float3 normal;    // Surface normal (for bouncing)
-    bool hit;         // Did we hit anything?
+struct Object {
+    int type;
+    float3 param1; //if it is a box, will be the min corner. Otherwise its the sphere orogin
+    float3 param2; //if it is a bhox, max corner, otherwise its the spehre radius
 };
+
+struct SceneHeader {
+    AABB room;
+    float3 source;
+    float3 listener;
+    float listener_r;
+    int num_objects;
+};
+
+
