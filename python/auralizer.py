@@ -21,11 +21,18 @@ AIR_ABSORPTION_COEF = 0.05
 # How much volume is lost per wall bounce
 WALL_REFLECTION_COEF = 0.8  
 
-def generate_dry_sound(duration_sec=0.5, freq=440):
-    """Generates a simple 'beep' to use as the sound source."""
+def generate_dry_sound(duration_sec=5.0, freq=110):
+    """Generates a continuous drone sound."""
     t = np.linspace(0, duration_sec, int(SAMPLE_RATE * duration_sec), endpoint=False)
-    # A simple sine wave envelope (Ping sound)
-    audio = np.sin(2 * np.pi * freq * t) * np.exp(-10 * t)
+    # Continuous sine wave (Drone) - Removed exponential decay
+    audio = np.sin(2 * np.pi * freq * t)
+    
+    # Add fade in/out to prevent clicking
+    fade_samples = int(0.1 * SAMPLE_RATE)
+    if len(audio) > 2 * fade_samples:
+        audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
+        audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+        
     return audio
 
 def intersect_segment_sphere(p1, p2, center, radius):
