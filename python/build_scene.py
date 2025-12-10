@@ -3,8 +3,8 @@ import struct
 # --- SCENE DEFINITION ---
 ROOM_MIN = (-50, -50, -10)
 ROOM_MAX = (50, 50, 10)
-SOURCE = (-25, 0, 0)
-LISTENER = (-24, 0, 0)
+SOURCE = (-28, 0, 0)
+LISTENER = (25, 0, 0)
 LISTENER_RADIUS = 2.0
 
 objects = []
@@ -12,12 +12,24 @@ objects = []
 # A large central pillar (Box)
 objects.append({
     'type': 1,
-    'p1': (-2, -50, -10), # Min
-    'p2': (2, 40, 10), # Max
+    'p1': (-24, -25, -10), # Min
+    'p2': (-22, 25, 10), # Max
     'trans': 0.0
-
 })
 
+objects.append({
+    'type': 1,
+    'p1': (-40, -25, -10), # Min
+    'p2': (-24, -23, 10), # Max
+    'trans': 0.2
+})
+
+objects.append({
+    'type': 1,
+    'p1': (-40, 23, -10), # Min
+    'p2': (-24, 25, 10), # Max
+    'trans': 0.2
+})
 
 # # A floating sphere blocking the source
 # objects.append({
