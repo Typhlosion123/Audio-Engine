@@ -11,7 +11,7 @@ INPUT_MEDIA_FILE = "songs/westside.mp4"
 MAX_DURATION_SEC = 60.0
 
 # Must match your C++ simulation
-LISTENER_POS = np.array([25.0, 0.0, 0.0]) 
+LISTENER_POS = np.array([-24.0, 0.0, 0.0]) 
 LISTENER_RADIUS = 2.0
 SPEED_OF_SOUND = 343.0 # m/s
 SAMPLE_RATE = 44100    # Hz
