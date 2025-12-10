@@ -11,7 +11,7 @@ cmake ..
 make 
 ```
 
-This will allow you to use the CUDA ray tracer. We will not move onto the python step. 
+This will allow you to use the CUDA ray tracer. We will now move onto the python step. 
 
 ### Python steps
 
@@ -51,6 +51,6 @@ This will create a paths.csv in your build folder. Now go to ```graph_rays.py```
 Lastly, head over to ```auralizer.py``` and run the script there. After a little bit, you will get ```audio_sim.wav```. Play this to see how audio would travel in that room with that spec with the power of ray tracing :)
 
 
-### Final thoughts
+#### Final thoughts
 
 If you are too lazy to do allat, head on over to [my website](https://www.chrisyxu.com) and go to the projects. There you can find a demo just for you!
