@@ -9,26 +9,11 @@ LISTENER_RADIUS = 2.0
 
 objects = []
 
-# A large central pillar (Box)
 objects.append({
     'type': 1,
-    'p1': (-24, -25, -10), # Min
-    'p2': (-22, 25, 10), # Max
-    'trans': 0.0
-})
-
-objects.append({
-    'type': 1,
-    'p1': (-40, -25, -10), # Min
-    'p2': (-24, -23, 10), # Max
-    'trans': 0.2
-})
-
-objects.append({
-    'type': 1,
-    'p1': (-40, 23, -10), # Min
-    'p2': (-24, 25, 10), # Max
-    'trans': 0.2
+    'p1': (-2, -50, -10), # Min
+    'p2': (2, 35, 10), # Max
+    'trans': 0.1
 })
 
 # # A floating sphere blocking the source
@@ -59,9 +44,6 @@ with open("../build/scene.bin", "wb") as f:
     ]
     f.write(struct.pack(header_fmt, *header_data))
 
-    # Write Objects (UPDATED)
-    # Type (1i), Param1 (3f), Param2 (3f), Transmission (1f)
-    # Total = 1 int + 7 floats
     obj_fmt = "i7f"
 
     for obj in objects:

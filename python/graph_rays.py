@@ -109,12 +109,12 @@ for rid in ray_ids:
         hit_count += 1
         traces.append(go.Scatter3d(
             x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
-            mode='lines', line=dict(color='#00FF00', width=1), opacity=0.1, showlegend=False
+            mode='lines', line=dict(color='#00FF00', width=1), opacity=0.25, showlegend=False
         ))
-    else:
+    elif (counter % 50 == 0):
         traces.append(go.Scatter3d(
             x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
-            mode='lines', line=dict(color='#FF0000', width=1), opacity=0.05, showlegend=False
+            mode='lines', line=dict(color='#FF0000', width=1), opacity=0.2, showlegend=False
         ))
     counter += 1
 
