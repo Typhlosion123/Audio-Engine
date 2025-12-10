@@ -3,21 +3,19 @@ import numpy as np
 import scipy.io.wavfile as wav
 import scipy.signal as signal
 import os
+import struct
+import librosa
 
-# --- CONFIGURATION ---
-# Input File (Set to None to use the synthetic drone)
-# You can use .wav, .mp3, .mp4, etc.
+# Iset to NONE for a drone
 INPUT_MEDIA_FILE = "songs/westside.mp4" 
 MAX_DURATION_SEC = 60.0
 
-# Must match your C++ simulation
-LISTENER_POS = np.array([25.0, 0.0, 0.0]) 
-LISTENER_RADIUS = 2.0
-SPEED_OF_SOUND = 343.0 # m/s
-SAMPLE_RATE = 44100    # Hz
+SCENE_FILE = "../build/scene.bin"
+HEADER_FMT = "13fi" # Must match C++ and Streamlit header structure
 
-# Stereo Settings
-LISTENER_RIGHT_VEC = np.array([0.0, 1.0, 0.0]) 
+SPEED_OF_SOUND = 343.0 # m/s
+SAMPLE_RATE = 44100# Hz
+LISTENER_RIGHT_VEC = np.array([0.0, 1.0, 0.0]) # Stereo orientation
 
 # --- PHYSICS PARAMETERS ---
 WALL_THICKNESS = 0.5
@@ -26,6 +24,37 @@ WALL_REFLECT_HIGH = 0.1 + (0.50 * WALL_THICKNESS)
 AIR_ABSORPTION_LOW  = 0.005
 AIR_ABSORPTION_HIGH = 0.100
 MUFFLE_CROSSOVER_HZ = 800
+
+def get_scene_listener_data():
+    """Reads scene.bin to find the exact listener position and radius."""
+    if not os.path.exists(SCENE_FILE):
+        print(f"{SCENE_FILE} not found. Using default listener values.")
+        return np.array([25.0, 0.0, 0.0]), 2.0
+
+    try:
+        with open(SCENE_FILE, "rb") as f:
+            size = struct.calcsize(HEADER_FMT)
+            data = f.read(size)
+            header = struct.unpack(HEADER_FMT, data)
+            
+            # Header Mapping based on Streamlit/C++ structure:
+            # 0-2: Room Min (x,y,z)
+            # 3-5: Room Max (x,y,z)
+            # 6-8: Source Pos (x,y,z)
+            # 9-11: Listener Pos (x,y,z)
+            # 12: Listener Radius
+            # 13: Num Objects
+            
+            lx, ly, lz = header[9], header[10], header[11]
+            radius = header[12]
+            
+            pos = np.array([lx, ly, lz])
+            print(f"Loaded Listener from scene.bin: {pos}, Radius: {radius}")
+            return pos, radius
+            
+    except Exception as e:
+        print(f"Error reading scene.bin: {e}. Using defaults.")
+        return np.array([25.0, 0.0, 0.0]), 2.0
 
 def generate_dry_sound(duration_sec=5.0, freq=110):
     """Fallback: Generates a rich Sawtooth drone."""
@@ -48,19 +77,11 @@ def load_audio_source(filename, max_duration):
     if filename is None:
         return generate_dry_sound()
 
-    try:
-        import librosa
-    except ImportError:
-        print("⚠️  Library 'librosa' not found. Cannot load media files.")
-        print("👉 Run: pip install librosa")
-        return generate_dry_sound()
-
     if not os.path.exists(filename):
-        print(f"⚠️  File '{filename}' not found. Using fallback drone.")
+        print(f"File '{filename}' not found. Using fallback drone.")
         return generate_dry_sound()
 
     print(f"Loading '{filename}'...")
-    # librosa.load automatically handles resampling (sr) and mixing to mono
     audio, _ = librosa.load(filename, sr=SAMPLE_RATE, mono=True, duration=max_duration)
     
     print(f"Loaded {len(audio)/SAMPLE_RATE:.2f} seconds of audio.")
@@ -83,6 +104,8 @@ def intersect_segment_sphere(p1, p2, center, radius):
     return False, None
 
 def main():
+    listener_pos, listener_radius = get_scene_listener_data()
+
     csv_path = "../build/paths.csv"
     if not os.path.exists(csv_path):
         print("Error: ../build/paths.csv not found.")
@@ -119,7 +142,8 @@ def main():
             segment_len = np.linalg.norm(p2 - p1)
             if segment_len < 1e-6: continue
 
-            hit, dist_on_seg = intersect_segment_sphere(p1, p2, LISTENER_POS, LISTENER_RADIUS)
+            # USE DYNAMIC LISTENER POSITION HERE
+            hit, dist_on_seg = intersect_segment_sphere(p1, p2, listener_pos, listener_radius)
             
             if hit:
                 final_dist = total_distance + dist_on_seg
@@ -136,7 +160,9 @@ def main():
                     
                     t_seg = dist_on_seg / segment_len
                     hit_point = p1 + (p2 - p1) * t_seg
-                    rel_vec = hit_point - LISTENER_POS
+                    
+                    # USE DYNAMIC LISTENER POSITION HERE FOR PANNING
+                    rel_vec = hit_point - listener_pos
                     rel_dir = rel_vec / (np.linalg.norm(rel_vec) + 1e-6)
                     pan = np.dot(rel_dir, LISTENER_RIGHT_VEC)
                     
@@ -161,11 +187,6 @@ def main():
     dry_L = signal.sosfilt(sos_low, dry_signal)
     dry_H = signal.sosfilt(sos_high, dry_signal)
     
-    # We use 'full' convolution, but we only need the valid part that matches our calculated length
-    # Note: fftconvolve output size is len(dry) + len(ir) - 1. 
-    # Since our IR is the full timeline (sparse histogram), convolving it with the signal 
-    # effectively places the signal echoes at the right times.
-    
     print("Convolving Low Band...")
     wet_L_L = signal.fftconvolve(dry_L, ir_low[:, 0], mode='full')[:total_len]
     wet_L_R = signal.fftconvolve(dry_L, ir_low[:, 1], mode='full')[:total_len]
@@ -184,6 +205,9 @@ def main():
         wet_signal = wet_signal / max_val * 0.9
     
     wet_signal_int = (wet_signal * 32767).astype(np.int16)
+    
+    # Ensure output directory exists
+    os.makedirs("output", exist_ok=True)
     
     filename = f"output/output_simulated_full.wav"
     wav.write(filename, SAMPLE_RATE, wet_signal_int)

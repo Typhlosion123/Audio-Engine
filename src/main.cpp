@@ -4,7 +4,7 @@
 #include <cuda_runtime.h>
 #include "types.h"
 
-const int N_RAYS = 50000; 
+const int N_RAYS = 150000; 
 
 extern "C" void initRandom(int n_rays);
 extern "C" void generateRays(Ray* d_rays, float3* d_paths, int* d_hits, int n_rays, SceneHeader scene, Object* objects);
