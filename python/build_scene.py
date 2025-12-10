@@ -12,8 +12,8 @@ objects = []
 # A large central pillar (Box)
 objects.append({
     'type': 1,
-    'p1': (-2, -10, -2), # Min
-    'p2': (2, 10, 2)     # Max
+    'p1': (-2, -10, -7.5), # Min
+    'p2': (2, 10, 7.5)     # Max
 })
 
 # A floating sphere blocking the source
