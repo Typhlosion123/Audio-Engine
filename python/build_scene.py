@@ -4,7 +4,7 @@ import struct
 ROOM_MIN = (-50, -50, -10)
 ROOM_MAX = (50, 50, 10)
 SOURCE = (-25, 0, 0)
-LISTENER = (25, 0, 0)
+LISTENER = (-24, 0, 0)
 LISTENER_RADIUS = 2.0
 
 objects = []
