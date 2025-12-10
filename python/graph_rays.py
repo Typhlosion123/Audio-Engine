@@ -21,7 +21,9 @@ with open(SCENE_FILE, "rb") as f:
     ROOM_MIN = h_data[0:3]
     ROOM_MAX = h_data[3:6]
     SOURCE_POS = h_data[6:9]
+    print(SOURCE_POS)
     LISTENER_POS = h_data[9:12]
+    print(LISTENER_POS)
     LISTENER_RADIUS = h_data[12]
     NUM_OBJECTS = h_data[13]
     
@@ -114,18 +116,19 @@ if (show_rays):
     hit_count = 0
 
     for rid in ray_ids:
-        ray_data = df[df['ray_id'] == rid]
-        did_hit = ray_data['hit_listener'].iloc[0] == 1
-        
-        if did_hit:
-            hit_count += 1
-            traces.append(go.Scatter3d(
-                x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
-                mode='lines', line=dict(color='#00FF00', width=2), opacity=0.1, showlegend=False
-            ))
-        else:
-            traces.append(go.Scatter3d(x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
-                mode='lines', line=dict(color='#FF0000', width=1), opacity=0.01, showlegend=False))
+        if (rid % 200 == 0):
+            ray_data = df[df['ray_id'] == rid]
+            did_hit = ray_data['hit_listener'].iloc[0] == 1
+            
+            if did_hit:
+                hit_count += 1
+                traces.append(go.Scatter3d(
+                    x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
+                    mode='lines', line=dict(color='#00FF00', width=2), opacity=0.1, showlegend=False
+                ))
+            else:
+                traces.append(go.Scatter3d(x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
+                    mode='lines', line=dict(color='#FF0000', width=1), opacity=0.01, showlegend=False))
 
     print(f"Hits: {hit_count}")
 

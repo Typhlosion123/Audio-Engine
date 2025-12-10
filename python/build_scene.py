@@ -1,10 +1,10 @@
 import struct
 
 # --- SCENE DEFINITION ---
-ROOM_MIN = (-15, -10, -15)
-ROOM_MAX = (15, 10, 15)
-SOURCE = (-10, 0, -10)
-LISTENER = (10, 0, 10)
+ROOM_MIN = (-50, -50, -10)
+ROOM_MAX = (50, 50, 10)
+SOURCE = (-25, 0, 0)
+LISTENER = (25, 0, 0)
 LISTENER_RADIUS = 2.0
 
 objects = []
@@ -12,15 +12,10 @@ objects = []
 # A large central pillar (Box)
 objects.append({
     'type': 1,
-    'p1': (-2, -10, -15), # Min
-    'p2': (2, -.5, 15)     # Max
+    'p1': (-2, -50, -10), # Min
+    'p2': (2, 40, 10)     # Max
 })
 
-objects.append({
-     'type':1,
-     'p1':(-2, .5, -15), 
-     'p2' : (2, 10, 15)
-})
 
 # # A floating sphere blocking the source
 # objects.append({
