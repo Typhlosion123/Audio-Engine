@@ -4,7 +4,7 @@
 #include <cuda_runtime.h>
 #include "types.h"
 
-const int N_RAYS = 500;
+const int N_RAYS = 250;
 const int MAX_BOUNCES = 50;
 
 extern "C" void initRandom(int n_rays);
@@ -21,10 +21,10 @@ int main() {
     cudaMalloc(&d_paths, path_size * sizeof(float3));
 
     int* d_hits;
-    cudaMalloc(&d_hits, N_RAYS * sizeof(int));
+    cudaMalloc(&d_hits, N_RAYS * sizeof(int)); 
 
-    float3 source_pos = make_float3(-7.0f, 0.0f, 0.0f);   
-    float3 listener_pos = make_float3(7.0f, 0.0f, 0.0f);   
+    float3 source_pos = make_float3(0.0f, -10.0f, 0.0f);   
+    float3 listener_pos = make_float3(0.0f, 10.0f, 2.5f); 
 
     std::cout << "Initializing..." << std::endl;
     initRandom(N_RAYS);

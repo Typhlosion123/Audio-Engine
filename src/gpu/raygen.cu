@@ -31,8 +31,8 @@ __global__ void genRaysKernel(Ray* rays, curandState* states, float3* paths, int
         bool has_hit_listener = false;
 
         AABB room;
-        room.min = make_float3(-10, -10, -10);
-        room.max = make_float3(10, 10, 10);
+        room.min = make_float3(-10, -20, -10);
+        room.max = make_float3(10, 20, 10);
 
         int path_base_idx = idx * (MAX_BOUNCES + 1);
         paths[path_base_idx] = r.origin;
