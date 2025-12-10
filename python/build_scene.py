@@ -13,7 +13,13 @@ objects = []
 objects.append({
     'type': 1,
     'p1': (-2, -10, -15), # Min
-    'p2': (2, 10, 15)     # Max
+    'p2': (2, -.5, 15)     # Max
+})
+
+objects.append({
+     'type':1,
+     'p1':(-2, .5, -15), 
+     'p2' : (2, 10, 15)
 })
 
 # # A floating sphere blocking the source

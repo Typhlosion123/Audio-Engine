@@ -123,6 +123,9 @@ if (show_rays):
                 x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
                 mode='lines', line=dict(color='#00FF00', width=2), opacity=0.1, showlegend=False
             ))
+        else:
+            traces.append(go.Scatter3d(x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
+                mode='lines', line=dict(color='#FF0000', width=1), opacity=0.01, showlegend=False))
 
     print(f"Hits: {hit_count}")
 
