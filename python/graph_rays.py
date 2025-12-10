@@ -1,205 +1,131 @@
 import pandas as pd
+import plotly.graph_objects as go
 import numpy as np
-import scipy.io.wavfile as wav
-import scipy.signal as signal
 import os
+import struct
 
-# --- CONFIGURATION ---
-# Must match your C++ simulation
-LISTENER_POS = np.array([10, 0.0, 10.0]) 
-LISTENER_RADIUS = 2.0
-SPEED_OF_SOUND = 343.0 # m/s
-SAMPLE_RATE = 44100    # Hz
+# --- LOAD SCENE FROM BINARY ---
+SCENE_FILE = "../build/scene.bin"
 
-# Stereo Settings
-# Vector pointing to the user's "Right" (Assuming facing +Z)
-LISTENER_RIGHT_VEC = np.array([1.0, 0.0, 0.0]) 
+show_rays = True
 
-# --- PHYSICS PARAMETERS ---
-# Wall Thickness (0.0 = Paper, 1.0 = Concrete Bunker)
-# Thicker walls reflect more sound (less transmission loss)
-WALL_THICKNESS = 0.8 
+if not os.path.exists(SCENE_FILE):
+    print("Error: Scene file not found. Run build_scene.py first.")
+    exit()
 
-# Reflection Coefficients (derived from thickness)
-# Low Freqs (Bass) reflect better than High Freqs (Treble)
-# Thicker walls reflect almost all bass, thin walls absorb/transmit it
-WALL_REFLECT_LOW  = 0.5 + (0.49 * WALL_THICKNESS)  # 0.5 to 0.99
-WALL_REFLECT_HIGH = 0.1 + (0.50 * WALL_THICKNESS)  # 0.1 to 0.60
-
-# Air absorption (Higher freqs die faster in air)
-AIR_ABSORPTION_LOW  = 0.005
-AIR_ABSORPTION_HIGH = 0.100
-
-# Crossover Frequency for the Muffling Effect
-MUFFLE_CROSSOVER_HZ = 800
-
-def generate_dry_sound(duration_sec=5.0, freq=110):
-    """Generates a rich Sawtooth drone (has high freqs to muffle)."""
-    t = np.linspace(0, duration_sec, int(SAMPLE_RATE * duration_sec), endpoint=False)
+with open(SCENE_FILE, "rb") as f:
+    # Read Header (13 floats, 1 int)
+    # Room(6), Source(3), Listener(3), Radius(1), Count(1)
+    h_data = struct.unpack("13fi", f.read(13*4 + 4))
     
-    # Use Sawtooth instead of Sine so we have harmonics to filter out
-    audio = signal.sawtooth(2 * np.pi * freq * t)
+    ROOM_MIN = h_data[0:3]
+    ROOM_MAX = h_data[3:6]
+    SOURCE_POS = h_data[6:9]
+    LISTENER_POS = h_data[9:12]
+    LISTENER_RADIUS = h_data[12]
+    NUM_OBJECTS = h_data[13]
     
-    # Add fade in/out to prevent clicking
-    fade_samples = int(0.1 * SAMPLE_RATE)
-    if len(audio) > 2 * fade_samples:
-        audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
-        audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+    print(f"Loaded Scene: Room={ROOM_MIN}-{ROOM_MAX}, Objects={NUM_OBJECTS}")
+
+    objects = []
+    for _ in range(NUM_OBJECTS):
+        # Type(1i), P1(3f), P2(3f)
+        obj_data = struct.unpack("i6f", f.read(4 + 6*4))
+        objects.append({
+            'type': obj_data[0],
+            'p1': obj_data[1:4],
+            'p2': obj_data[4:7]
+        })
+
+# --- LOAD RAYS ---
+csv_path = "../build/paths.csv"
+if not os.path.exists(csv_path):
+    print("Run C++ sim first.")
+    exit()
+
+df = pd.read_csv(csv_path)
+
+traces = []
+
+# --- DRAW ROOM ---
+def get_box_wireframe(min_c, max_c):
+    x0, y0, z0 = min_c
+    x1, y1, z1 = max_c
+    
+    x = [x0, x1, x1, x0, x0, None, x0, x1, x1, x0, x0, None, x0, x0, None, x1, x1, None, x1, x1, None, x0, x0]
+    y = [y0, y0, y0, y0, y0, None, y1, y1, y1, y1, y1, None, y0, y1, None, y0, y1, None, y0, y1, None, y0, y1]
+    z = [z0, z0, z1, z1, z0, None, z0, z0, z1, z1, z0, None, z0, z0, None, z0, z0, None, z1, z1, None, z1, z1]
+    return x, y, z
+
+# Draw Room Boundary (White Wireframe)
+rx, ry, rz = get_box_wireframe(ROOM_MIN, ROOM_MAX)
+traces.append(go.Scatter3d(x=rx, y=ry, z=rz, mode='lines', line=dict(color='white', width=4), name='Room'))
+
+# --- DRAW OBJECTS ---
+def get_sphere_mesh(x, y, z, r, color, name, opacity=0.8):
+    phi = np.linspace(0, 2*np.pi, 20)
+    theta = np.linspace(0, np.pi, 20)
+    phi, theta = np.meshgrid(phi, theta)
+    return go.Surface(
+        x=r*np.sin(theta)*np.cos(phi)+x, 
+        y=r*np.sin(theta)*np.sin(phi)+y, 
+        z=r*np.cos(theta)+z, 
+        colorscale=[[0, color], [1, color]], 
+        showscale=False, opacity=opacity, name=name
+    )
+
+def get_box_mesh(min_c, max_c, color, name):
+    # Create a solid mesh for the box using convex hull (alphahull=0)
+    x0, y0, z0 = min_c
+    x1, y1, z1 = max_c
+    # 8 corners
+    x = [x0, x0, x1, x1, x0, x0, x1, x1]
+    y = [y0, y1, y1, y0, y0, y1, y1, y0]
+    z = [z0, z0, z0, z0, z1, z1, z1, z1]
+    
+    return go.Mesh3d(
+        x=x, y=y, z=z,
+        color=color,
+        alphahull=0, # Generates convex hull (perfect for cubes)
+        opacity=0.6,
+        name=name,
+        flatshading=True
+    )
+
+for i, obj in enumerate(objects):
+    if obj['type'] == 0: # Sphere
+        # Draw Solid Sphere (Orange)
+        traces.append(get_sphere_mesh(obj['p1'][0], obj['p1'][1], obj['p1'][2], obj['p2'][0], 'orange', f"Sphere {i}", opacity=0.9))
         
-    return audio
+    elif obj['type'] == 1: # Box
+        # Draw Solid Box (Orange Mesh)
+        traces.append(get_box_mesh(obj['p1'], obj['p2'], 'orange', f"Box {i}"))
+        # Draw Box Edges (White Wireframe overlay for sharpness)
+        bx, by, bz = get_box_wireframe(obj['p1'], obj['p2'])
+        traces.append(go.Scatter3d(x=bx, y=by, z=bz, mode='lines', line=dict(color='white', width=3), name=f"Box Edge {i}", showlegend=False))
 
-def intersect_segment_sphere(p1, p2, center, radius):
-    """
-    Checks if a line segment P1->P2 hits the listener sphere.
-    Returns: (True, distance_along_segment) or (False, None)
-    """
-    d = p2 - p1
-    f = p1 - center
-    
-    a = np.dot(d, d)
-    
-    # SAFETY CHECK: Ignore zero-length segments (caused by padding in C++)
-    if a < 1e-8:
-        return False, None
+# --- DRAW SOURCE/LISTENER ---
+traces.append(get_sphere_mesh(LISTENER_POS[0], LISTENER_POS[1], LISTENER_POS[2], LISTENER_RADIUS, 'yellow', 'Listener', opacity=0.3))
+traces.append(go.Scatter3d(x=[SOURCE_POS[0]], y=[SOURCE_POS[1]], z=[SOURCE_POS[2]], mode='markers', marker=dict(size=8, color='red'), name='Source'))
 
-    b = 2 * np.dot(f, d)
-    c = np.dot(f, f) - radius**2
+# --- DRAW RAYS ---
+if (show_rays):
+    ray_ids = df['ray_id'].unique()
+    hit_count = 0
 
-    discriminant = b*b - 4*a*c
-    
-    if discriminant < 0:
-        return False, None
-    
-    discriminant = np.sqrt(discriminant)
-    t1 = (-b - discriminant) / (2*a)
-    t2 = (-b + discriminant) / (2*a)
-
-    # Check if the intersection is actually ON the segment (0 <= t <= 1)
-    if 0 <= t1 <= 1:
-        return True, t1 * np.linalg.norm(d)
-    if 0 <= t2 <= 1:
-        return True, t2 * np.linalg.norm(d)
+    for rid in ray_ids:
+        ray_data = df[df['ray_id'] == rid]
+        did_hit = ray_data['hit_listener'].iloc[0] == 1
         
-    return False, None
+        if did_hit:
+            hit_count += 1
+            traces.append(go.Scatter3d(
+                x=ray_data['x'], y=ray_data['y'], z=ray_data['z'],
+                mode='lines', line=dict(color='#00FF00', width=2), opacity=0.1, showlegend=False
+            ))
 
-def main():
-    csv_path = "../build/paths.csv"
-    if not os.path.exists(csv_path):
-        print("Error: ../build/paths.csv not found.")
-        return
+    print(f"Hits: {hit_count}")
 
-    print("Loading ray paths...")
-    df = pd.read_csv(csv_path)
-    
-    hit_ray_ids = df[df['hit_listener'] == 1]['ray_id'].unique()
-    print(f"Processing {len(hit_ray_ids)} rays that touched the listener...")
-
-    # Create TWO Impulse Response buffers (Low Band, High Band)
-    # Shape: (Samples, 2 Channels)
-    ir_length = 5 * SAMPLE_RATE
-    ir_low  = np.zeros((ir_length, 2))
-    ir_high = np.zeros((ir_length, 2))
-
-    for rid in hit_ray_ids:
-        # Get all bounces for this ray
-        ray_data = df[df['ray_id'] == rid].sort_values('bounce_id')
-        coords = ray_data[['x', 'y', 'z']].values
-        
-        total_distance = 0.0
-        
-        # Track energy separately for Bass and Treble
-        energy_low = 1.0
-        energy_high = 1.0
-        
-        # Walk through the path segments
-        for i in range(len(coords) - 1):
-            p1 = coords[i]
-            p2 = coords[i+1]
-            
-            segment_len = np.linalg.norm(p2 - p1)
-            if segment_len < 1e-6: continue
-
-            # Check for Listener Hit
-            hit, dist_on_seg = intersect_segment_sphere(p1, p2, LISTENER_POS, LISTENER_RADIUS)
-            
-            if hit:
-                # 1. Timing
-                final_dist = total_distance + dist_on_seg
-                arrival_time = final_dist / SPEED_OF_SOUND
-                sample_index = int(arrival_time * SAMPLE_RATE)
-                
-                if sample_index < ir_length:
-                    # 2. Geometric Spreading (Affects both bands equally)
-                    spread_loss = 1.0 / max(final_dist, 1.0)
-                    
-                    # 3. Air Absorption (Frequency Dependent)
-                    air_loss_L = np.exp(-AIR_ABSORPTION_LOW * final_dist)
-                    air_loss_H = np.exp(-AIR_ABSORPTION_HIGH * final_dist)
-                    
-                    # 4. Combine histories
-                    amp_L = energy_low * spread_loss * air_loss_L
-                    amp_H = energy_high * spread_loss * air_loss_H
-                    
-                    # 5. Stereo Panning
-                    t_seg = dist_on_seg / segment_len
-                    hit_point = p1 + (p2 - p1) * t_seg
-                    rel_vec = hit_point - LISTENER_POS
-                    rel_dir = rel_vec / (np.linalg.norm(rel_vec) + 1e-6)
-                    pan = np.dot(rel_dir, LISTENER_RIGHT_VEC)
-                    
-                    gain_R = (pan + 1.0) / 2.0
-                    gain_L = (1.0 - pan) / 2.0
-                    
-                    # Add to separate frequency bands
-                    ir_low[sample_index, 0]  += amp_L * gain_L
-                    ir_low[sample_index, 1]  += amp_L * gain_R
-                    ir_high[sample_index, 0] += amp_H * gain_L
-                    ir_high[sample_index, 1] += amp_H * gain_R
-            
-            # Prepare for next segment (Bounce)
-            total_distance += segment_len
-            
-            # Apply Wall Absorption (Frequency Dependent)
-            energy_low  *= WALL_REFLECT_LOW
-            energy_high *= WALL_REFLECT_HIGH
-
-    # --- AURALIZATION ---
-    print("Generating Signal...")
-    dry_signal = generate_dry_sound()
-    
-    # Create Filters to split the dry signal into Bass and Treble
-    # Butterworth 4th order filter
-    sos_low  = signal.butter(4, MUFFLE_CROSSOVER_HZ, 'lp', fs=SAMPLE_RATE, output='sos')
-    sos_high = signal.butter(4, MUFFLE_CROSSOVER_HZ, 'hp', fs=SAMPLE_RATE, output='sos')
-    
-    dry_L = signal.sosfilt(sos_low, dry_signal)
-    dry_H = signal.sosfilt(sos_high, dry_signal)
-    
-    print("Convolving Low Band...")
-    wet_L_L = signal.fftconvolve(dry_L, ir_low[:, 0], mode='full')
-    wet_L_R = signal.fftconvolve(dry_L, ir_low[:, 1], mode='full')
-    
-    print("Convolving High Band...")
-    wet_H_L = signal.fftconvolve(dry_H, ir_high[:, 0], mode='full')
-    wet_H_R = signal.fftconvolve(dry_H, ir_high[:, 1], mode='full')
-    
-    # Mix Bands
-    final_L = wet_L_L + wet_H_L
-    final_R = wet_L_R + wet_H_R
-    
-    # Stack Stereo
-    wet_signal = np.column_stack((final_L, final_R))
-    
-    # Normalize
-    max_val = np.max(np.abs(wet_signal))
-    if max_val > 0:
-        wet_signal = wet_signal / max_val * 0.9
-    
-    wet_signal_int = (wet_signal * 32767).astype(np.int16)
-    
-    filename = f"output/output_muffled_thick{WALL_THICKNESS}.wav"
-    wav.write(filename, SAMPLE_RATE, wet_signal_int)
-    print(f"Success! Saved '{filename}'.")
-
-if __name__ == "__main__":
-    main()
+layout = go.Layout(scene=dict(aspectmode='data', bgcolor='black'))
+fig = go.Figure(data=traces, layout=layout)
+fig.write_html("output/audio_sim.html")
