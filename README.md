@@ -1,3 +1,4 @@
 # Audio-Engine
 
-Personal Ray Traced Audio Engine Made with CUDA and C++
+## How to use the Typhlosion123 Audio Ray Tracer
+
